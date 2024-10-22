@@ -24,5 +24,11 @@ fn main() {
         // 调用 add 函数
         let result = add(5, 7);
         println!("Result of add(5, 7): {}", result);
+
+        let proc: Symbol<unsafe extern "C" fn()> =
+            lib.get(b"proc").expect("Failed to load function proc");
+
+        // 调用 hello_from_c 函数
+        proc();
     }
 }
