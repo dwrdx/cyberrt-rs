@@ -5,6 +5,10 @@ use tokio::time::{self, Duration};
 use std::fs;
 use json;
 
+mod utils;
+
+use utils::get_current_timestamp;
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>>  {
 
@@ -44,7 +48,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>>  {
             lib.get(b"proc").expect("Failed to load function proc");
 
         // 调用 hello_from_c 函数
-        tokio::spawn(periodic_task(*hello_from_c, period_ms)).await.unwrap();
+        // loop to create 5 tasks
+        let mut tasks = vec![];
+        for id in 0..1000 {
+            let handle =tokio::spawn(periodic_task(id, *hello_from_c, period_ms));
+            tasks.push(handle);
+            println!("Task {} started", id);
+
+        }
+
+        for task in tasks {
+            task.await.unwrap();
+        }
 
         proc();
 
@@ -56,8 +71,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>>  {
 
 
 
-async fn periodic_task(proc: unsafe extern "C" fn(), period_ms: u64) {
-    let mut interval = time::interval(Duration::from_micros(period_ms)); // 每5秒触发一次
+async fn periodic_task(id: u16, proc: unsafe extern "C" fn(), period_ms: u64) {
+    let mut interval = time::interval(Duration::from_millis(period_ms)); // 每5秒触发一次
+    let mut last_execution = get_current_timestamp();
 
     loop {
         interval.tick().await;
@@ -65,6 +81,13 @@ async fn periodic_task(proc: unsafe extern "C" fn(), period_ms: u64) {
         unsafe {
             proc();
         }
-        println!("Periodic task is running in {}ms!", period_ms);
+
+        let timestamp_ms = get_current_timestamp();
+        let delta_ms = timestamp_ms - last_execution;
+        last_execution = timestamp_ms;
+    
+        if delta_ms >= ((period_ms + 10u64) as u128) || delta_ms <= ((period_ms - 10u64) as u128) {
+            println!("[TaskID:{}] is running at {}, every {} ms!", id, timestamp_ms, delta_ms);
+        }
     }
 }
