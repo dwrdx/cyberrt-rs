@@ -1,4 +1,4 @@
 {
     "name": "test",
-    "period_ms": 500
+    "period_ms": 10
 }

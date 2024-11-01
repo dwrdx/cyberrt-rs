@@ -4,13 +4,16 @@ use tokio::time::{self, Duration};
 
 use std::fs;
 use json;
+use console_subscriber;
+
 
 mod utils;
 
 use utils::get_current_timestamp;
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>>  {
+async fn entry() -> Result<(), Box<dyn std::error::Error>>  {
+
+    console_subscriber::init();
 
     let json_content = fs::read_to_string("test.json")
         .expect("Failed to read JSON file");
@@ -32,10 +35,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>>  {
     unsafe {
         let lib = Library::new(lib_path).expect("Failed to load the shared library");
 
-        // 定义 hello_from_c 函数的类型
-        let hello_from_c: Symbol<unsafe extern "C" fn()> =
-            lib.get(b"hello_from_c").expect("Failed to load function hello_from_c");
-
         // 定义 add 函数的类型
         let add: Symbol<unsafe extern "C" fn(i32, i32) -> i32> =
             lib.get(b"add").expect("Failed to load function add");
@@ -47,11 +46,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>>  {
         let proc: Symbol<unsafe extern "C" fn()> =
             lib.get(b"proc").expect("Failed to load function proc");
 
-        // 调用 hello_from_c 函数
         // loop to create 5 tasks
         let mut tasks = vec![];
-        for id in 0..1000 {
-            let handle =tokio::spawn(periodic_task(id, *hello_from_c, period_ms));
+        let number_of_task = 1;
+        for id in 0..number_of_task {
+            let handle =tokio::spawn(periodic_task(id, *proc, period_ms));
             tasks.push(handle);
             println!("Task {} started", id);
 
@@ -60,34 +59,51 @@ async fn main() -> Result<(), Box<dyn std::error::Error>>  {
         for task in tasks {
             task.await.unwrap();
         }
-
-        proc();
-
-
     }
     Ok(())
 }
 
 
+fn main() {
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(10) // 配置工作线程数量
+        .enable_all()
+        .build()
+        .unwrap();
+
+    runtime.block_on(async {
+        // 调用你的主逻辑
+        entry().await.unwrap();
+    });
+}
 
 
 async fn periodic_task(id: u16, proc: unsafe extern "C" fn(), period_ms: u64) {
-    let mut interval = time::interval(Duration::from_millis(period_ms)); // 每5秒触发一次
+    let mut interval = time::interval(Duration::from_millis(period_ms)); 
     let mut last_execution = get_current_timestamp();
+
+    interval.tick().await;
 
     loop {
         interval.tick().await;
-        // 这里放置要周期性执行的代码
+
+        // ------------ Task Logic ------------ 
         unsafe {
             proc();
         }
+
+        // added some workload here 
+        // tokio::time::sleep(Duration::from_millis(1)).await; 
+
+        // ------------ Task Logic End ------------ 
 
         let timestamp_ms = get_current_timestamp();
         let delta_ms = timestamp_ms - last_execution;
         last_execution = timestamp_ms;
     
-        if delta_ms >= ((period_ms + 10u64) as u128) || delta_ms <= ((period_ms - 10u64) as u128) {
-            println!("[TaskID:{}] is running at {}, every {} ms!", id, timestamp_ms, delta_ms);
+        if delta_ms as f64 >= ((period_ms as f64) * 1.1 ) || delta_ms as f64 <= ((period_ms as f64) * 0.9) {
+            println!("TaskID: {} is running at {}, every {} ms!", id, timestamp_ms, delta_ms);
         }
     }
 }
